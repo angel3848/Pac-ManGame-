@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Emoji Pac-Man 🍒🍊🍋</title>
+<style>
+  body {
+    margin:0;
+    height:100vh;
+    background:#000;
+    font-family:Arial, Helvetica, sans-serif;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    color:#ff0;
+  }
+  #game {
+    position:relative;
+    width:560px;
+    height:620px;
+    background:#000;
+    image-rendering:pixelated;
+  }
+  canvas {
+    image-rendering:pixelated;
+    background:#000;
+  }
+  #ui {
+    position:absolute;
+    top:10px;
+    left:10px;
+    right:10px;
+    color:#fff;
+    font-size:24px;
+    pointer-events:none;
+    display:flex;
+    justify-content:space-between;
+  }
+  #start-screen, #game-over {
+    position:absolute;
+    inset:0;
+    background:rgba(0,0,0,0.85);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    color:#ff0;
+    font-size:48px;
+    text-shadow:0 0 10px #f00;
+    z-index:10;
+  }
+  button {
+    margin-top:20px;
+    padding:12px 32px;
+    font-size:28px;
+    background:#222;
+    color:#ff0;
+    border:3px solid #ff0;
+    cursor:pointer;
+  }
+  button:hover {
+    background:#440;
+  }
+</style>
+</head>
+<body>
+
+<div id="game">
+  <div id="ui">
+    <div>Score: <span id="score">0</span></div>
+    <div>Lives: <span id="lives">3</span></div>
+  </div>
+
+  <canvas id="c" width="560" height="620"></canvas>
+
+  <div id="start-screen">
+    <div>EMOJI PAC-MAN</div>
+    <div style="font-size:36px; margin:20px 0;">Use ← ↑ → ↓ or WASD</div>
+    <button onclick="startGame()">PLAY</button>
+  </div>
+
+  <div id="game-over" style="display:none">
+    <div>GAME OVER</div>
+    <div style="font-size:32px; margin:20px 0;">Score: <span id="final-score">0</span></div>
+    <button onclick="location.reload()">PLAY AGAIN</button>
+  </div>
+</div>
+
+<script>
+// ────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const TILE = 28;
+const COLS = 20;
+const ROWS = 22;
+
+let score = 0;
+let lives = 3;
+let gameRunning = false;
+
+// ─── MAP (1=wall, 0=dot, 2=power, 3=empty, 4=fruit) ───────
+const map = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,1],
+  [1,0,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,0,1],
+  [1,2,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,2,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,1,1,0,1,0,1,1,1,1,1,1,0,1,0,1,1,0,1],
+  [1,0,0,0,0,1,0,0,0,1,1,0,0,0,1,0,0,0,0,1],
+  [1,1,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,1,1],
+  [1,1,1,1,0,1,3,3,3,3,3,3,3,3,1,0,1,1,1,1],
+  [1,1,1,1,0,1,3,1,1,4,4,1,1,3,1,0,1,1,1,1],
+  [1,1,1,1,0,0,3,1,4,4,4,4,1,3,0,0,1,1,1,1],
+  [1,1,1,1,0,1,3,1,1,1,1,1,1,3,1,0,1,1,1,1],
+  [1,1,1,1,0,1,3,3,3,3,3,3,3,3,1,0,1,1,1,1],
+  [1,1,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,1,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,0,1],
+  [1,2,0,1,0,0,0,0,0,1,1,0,0,0,0,0,1,0,2,1],
+  [1,1,0,1,0,1,0,1,1,1,1,1,1,0,1,0,1,0,1,1],
+  [1,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,1],
+  [1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+// ─── Game objects ────────────────────────────────────────
+let pac = { x:9.5, y:15.5, dir:'right', mouth:0, mouthDir:1 };
+let ghosts = [
+  {x:9.5, y:9,   dir:'up',   color:'#f33', emoji:'👻', mode:'scatter'},
+  {x:10.5,y:9,   dir:'up',   color:'#ffb8ff', emoji:'👻', mode:'scatter'},
+  {x:9,  y:10,   dir:'left', color:'#00ffff', emoji:'👻', mode:'scatter'},
+  {x:11, y:10,   dir:'right',color:'#ffb851', emoji:'👻', mode:'scatter'}
+];
+
+let fruitTimer = 0;
+let frightenedTimer = 0;
+let keys = {};
+let dotsLeft = 0;
+
+// Count initial dots
+for(let r of map) for(let c of r) if(c===0 || c===2) dotsLeft++;
+
+// ─── Input ───────────────────────────────────────────────
+window.addEventListener('keydown', e=>{
+  if(!gameRunning) return;
+  keys[e.key.toLowerCase()] = true;
+  if(['arrowleft','a'].includes(e.key.toLowerCase())) pac.dir='left';
+  if(['arrowright','d'].includes(e.key.toLowerCase())) pac.dir='right';
+  if(['arrowup','w'].includes(e.key.toLowerCase())) pac.dir='up';
+  if(['arrowdown','s'].includes(e.key.toLowerCase())) pac.dir='down';
+});
+
+window.addEventListener('keyup', e=>{
+  keys[e.key.toLowerCase()] = false;
+});
+
+// ─── Utils ───────────────────────────────────────────────
+function getTile(x,y) {
+  const cx = Math.floor(x);
+  const cy = Math.floor(y);
+  if(cx<0||cx>=COLS||cy<0||cy>=ROWS) return 1;
+  return map[cy][cx];
+}
+
+function canMove(x,y,dir) {
+  let nx = x, ny = y;
+  if(dir==='left')  nx-=0.15;
+  if(dir==='right') nx+=0.15;
+  if(dir==='up')    ny-=0.15;
+  if(dir==='down')  ny+=0.15;
+
+  const corners = [
+    [nx-0.4, ny-0.4],
+    [nx+0.4, ny-0.4],
+    [nx-0.4, ny+0.4],
+    [nx+0.4, ny+0.4]
+  ];
+
+  for(let [px,py] of corners) {
+    if(getTile(px,py) === 1) return false;
+  }
+  return true;
+}
+
+function eatDot(x,y) {
+  const tx = Math.floor(x), ty = Math.floor(y);
+  if(map[ty][tx] === 0) {
+    map[ty][tx] = 3;
+    score += 10;
+    dotsLeft--;
+  }
+  else if(map[ty][tx] === 2) {
+    map[ty][tx] = 3;
+    score += 50;
+    frightenedTimer = 420; // ~7 seconds @60fps
+    dotsLeft--;
+  }
+  else if(map[ty][tx] === 4 && fruitTimer > 0) {
+    map[ty][tx] = 3;
+    score += 200;
+    fruitTimer = 0;
+  }
+}
+
+// ─── Ghost AI (very basic chase/scatter) ─────────────────
+function ghostAI(g) {
+  let targetX = pac.x, targetY = pac.y;
+
+  if(frightenedTimer > 0) {
+    g.mode = 'frightened';
+  }
+  else if(g.mode === 'scatter') {
+    // scatter corners (very rough)
+    if(g === ghosts[0]) {targetX=0; targetY=0;}
+    if(g === ghosts[1]) {targetX=19; targetY=0;}
+    if(g === ghosts[2]) {targetX=0; targetY=21;}
+    if(g === ghosts[3]) {targetX=19; targetY=21;}
+  }
+  else {
+    // chase
+    targetX = pac.x;
+    targetY = pac.y;
+  }
+
+  const dirs = ['left','right','up','down'];
+  let bestDir = g.dir;
+  let bestDist = Infinity;
+
+  for(let d of dirs) {
+    if(d === opposite(g.dir)) continue;
+    let nx = g.x, ny = g.y;
+    if(d==='left') nx-=0.1;
+    if(d==='right') nx+=0.1;
+    if(d==='up') ny-=0.1;
+    if(d==='down') ny+=0.1;
+
+    if(!canMove(g.x,g.y,d)) continue;
+
+    let dist = Math.hypot(nx-targetX, ny-targetY);
+    if(dist < bestDist) {
+      bestDist = dist;
+      bestDir = d;
+    }
+  }
+
+  g.dir = bestDir;
+}
+
+function opposite(dir) {
+  if(dir==='left') return 'right';
+  if(dir==='right') return 'left';
+  if(dir==='up') return 'down';
+  if(dir==='down') return 'up';
+  return dir;
+}
+
+// ─── Main update ─────────────────────────────────────────
+function update() {
+  if(!gameRunning) return;
+
+  // Pac-Man movement
+  if(canMove(pac.x, pac.y, pac.dir)) {
+    if(pac.dir==='left')  pac.x -= 0.12;
+    if(pac.dir==='right') pac.x += 0.12;
+    if(pac.dir==='up')    pac.y -= 0.12;
+    if(pac.dir==='down')  pac.y += 0.12;
+  }
+
+  // Tunnel
+  if(pac.x < -0.5) pac.x = COLS + 0.5;
+  if(pac.x > COLS+0.5) pac.x = -0.5;
+
+  eatDot(pac.x, pac.y);
+
+  // Mouth animation
+  pac.mouth += pac.mouthDir * 0.3;
+  if(pac.mouth > 1 || pac.mouth < 0) pac.mouthDir *= -1;
+
+  // Fruit appears after ~1/3 dots eaten
+  if(fruitTimer === 0 && dotsLeft < 170 && dotsLeft > 140) {
+    fruitTimer = 600; // ~10 sec
+    // place fruit in the middle box
+    if(map[10][9] === 3) map[10][9] = 4;
+    if(map[10][10]=== 3) map[10][10]= 4;
+  }
+  if(fruitTimer > 0) fruitTimer--;
+
+  // Ghosts
+  for(let g of ghosts) {
+    ghostAI(g);
+
+    if(canMove(g.x, g.y, g.dir)) {
+      if(g.dir==='left')  g.x -= 0.09;
+      if(g.dir==='right') g.x += 0.09;
+      if(g.dir==='up')    g.y -= 0.09;
+      if(g.dir==='down')  g.y += 0.09;
+    }
+
+    // Collision with pac
+    let dx = g.x - pac.x;
+    let dy = g.y - pac.y;
+    if(Math.hypot(dx,dy) < 0.7) {
+      if(frightenedTimer > 0) {
+        // eat ghost
+        score += 200;
+        g.x = 9.5; g.y = 9; // return to house
+        g.mode = 'scatter';
+      } else {
+        lives--;
+        document.getElementById('lives').textContent = lives;
+        if(lives <= 0) {
+          gameRunning = false;
+          document.getElementById('game-over').style.display = 'flex';
+          document.getElementById('final-score').textContent = score;
+        } else {
+          // reset positions
+          pac.x = 9.5; pac.y = 15.5;
+          for(let g of ghosts) { g.x=9.5; g.y=9; }
+        }
+      }
+    }
+  }
+
+  if(frightenedTimer > 0) frightenedTimer--;
+
+  if(dotsLeft <= 0) {
+    alert("YOU WIN! 🎉\nScore: " + score);
+    location.reload();
+  }
+
+  document.getElementById('score').textContent = score;
+}
+
+// ─── Render ──────────────────────────────────────────────
+function draw() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // Draw map
+  for(let y=0; y<ROWS; y++) {
+    for(let x=0; x<COLS; x++) {
+      const t = map[y][x];
+      const px = x*TILE + TILE/2;
+      const py = y*TILE + TILE/2;
+
+      if(t === 1) {
+        ctx.fillStyle = '#00f';
+        ctx.fillRect(x*TILE+4, y*TILE+4, TILE-8, TILE-8);
+      }
+      else if(t === 0) {
+        ctx.fillStyle = '#ffb';
+        ctx.beginPath();
+        ctx.arc(px, py, 4, 0, Math.PI*2);
+        ctx.fill();
+      }
+      else if(t === 2) {
+        ctx.fillStyle = '#f0f';
+        ctx.beginPath();
+        ctx.arc(px, py, 8, 0, Math.PI*2);
+        ctx.fill();
+      }
+      else if(t === 4) {
+        ctx.font = '38px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🍒', px, py);
+      }
+    }
+  }
+
+  // Pac-Man
+  ctx.save();
+  ctx.translate(pac.x*TILE + TILE/2, pac.y*TILE + TILE/2);
+
+  let angle = 0;
+  if(pac.dir==='right') angle=0;
+  if(pac.dir==='down')  angle=Math.PI/2;
+  if(pac.dir==='left')  angle=Math.PI;
+  if(pac.dir==='up')    angle=Math.PI*1.5;
+
+  ctx.rotate(angle);
+
+  ctx.fillStyle = '#ff0';
+  ctx.beginPath();
+  ctx.arc(0,0, TILE*0.45, (0.2 + pac.mouth*0.4) * Math.PI, (1.8 - pac.mouth*0.4) * Math.PI);
+  ctx.lineTo(0,0);
+  ctx.fill();
+
+  // eye
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.arc(TILE*0.15, -TILE*0.15, TILE*0.08, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.restore();
+
+  // Ghosts
+  for(let g of ghosts) {
+    ctx.font = frightenedTimer>0 ? '32px Arial' : '34px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    if(frightenedTimer > 0) {
+      ctx.fillStyle = frightenedTimer < 120 && (frightenedTimer%30<15) ? '#00f' : '#009';
+      ctx.fillText('👻', g.x*TILE+TILE/2, g.y*TILE+TILE/2+4);
+    } else {
+      ctx.fillStyle = g.color;
+      ctx.fillText(g.emoji, g.x*TILE+TILE/2, g.y*TILE+TILE/2+4);
+    }
+  }
+
+  requestAnimationFrame(draw);
+}
+
+function startGame() {
+  document.getElementById('start-screen').style.display = 'none';
+  gameRunning = true;
+  requestAnimationFrame(draw);
+  setInterval(update, 1000/60);
+}
+
+// Optional: auto-start for testing
+// startGame();
+
+</script>
+</body>
+</html>
